@@ -260,3 +260,51 @@ jobs:
             ${{ env.IMAGE }}:server
             ${{ env.IMAGE }}:server-${{ github.sha }}
           cache-from: type=gha,scope=server
+
+  # ──────────────────────────────────────────────────────────────────────────
+  # 5. Update GitOps deployment repo with new image tags
+  # ──────────────────────────────────────────────────────────────────────────
+  update-gitops:
+    name: Update GitOps Deployment Repo
+    runs-on: ubuntu-latest
+    needs: container-build-scan-push
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+
+    steps:
+      - name: Checkout deployment repo
+        uses: actions/checkout@v4
+        with:
+          repository: pkhamdee/slotmachine-deployment
+          token: ${{ secrets.DEPLOY_REPO_TOKEN }}
+
+      - name: Install kustomize
+        run: |
+          curl -sL "https://raw.githubusercontent.com/kubernetes-sigs/kustomize/master/hack/install_kustomize.sh" | bash
+          sudo mv kustomize /usr/local/bin/
+
+      - name: Update production overlay image tags
+        run: |
+          cd overlays/production
+          kustomize edit set image \
+            slotmachine-client=pkhamdee/slotmachine:client-${{ github.sha }} \
+            slotmachine-server=pkhamdee/slotmachine:server-${{ github.sha }}
+
+      - name: Update development overlay image tags
+        run: |
+          cd overlays/development
+          kustomize edit set image \
+            slotmachine-client=pkhamdee/slotmachine:client-${{ github.sha }} \
+            slotmachine-server=pkhamdee/slotmachine:server-${{ github.sha }}
+
+      - name: Commit and push to deployment repo
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add overlays/
+          git diff --cached --quiet && echo "No changes to commit" && exit 0
+          git commit -m "ci: update images to ${{ github.sha }}
+
+          client: pkhamdee/slotmachine:client-${{ github.sha }}
+          server: pkhamdee/slotmachine:server-${{ github.sha }}
+          source: pkhamdee/slotmachine@${{ github.sha }}"
+          git push
