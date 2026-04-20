@@ -1,0 +1,27 @@
+node_modules/
+dist/
+
+# Environment files — never commit real secrets
+.env
+.env.*
+!.env.example
+
+# Docker local overrides
+docker-compose.override.yml
+
+# Claude Code local settings
+.claude/
+
+# TLS / private keys
+*.pem
+*.key
+*.cert
+*.p12
+*.pfx
+
+# Logs
+*.log
+logs/
+
+# OS
+.DS_Store
