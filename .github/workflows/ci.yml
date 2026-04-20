@@ -46,12 +46,13 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 20
+          cache: npm
+
+      # Install all workspace deps from root (single lock file)
+      - name: Install all dependencies
+        run: npm ci
 
       # Client ---------------------------------------------------------------
-      - name: Install client dependencies
-        run: npm ci
-        working-directory: client
-
       - name: Run client unit tests
         run: npm test
         working-directory: client
@@ -68,10 +69,6 @@ jobs:
           retention-days: 1
 
       # Server ---------------------------------------------------------------
-      - name: Install server dependencies
-        run: npm ci
-        working-directory: server
-
       - name: Run server unit tests
         run: npm test
         working-directory: server
@@ -102,10 +99,10 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 20
+          cache: npm
 
-      - name: Install server dependencies
+      - name: Install all dependencies
         run: npm ci
-        working-directory: server
 
       - name: Start API server
         working-directory: server
