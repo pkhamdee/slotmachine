@@ -280,6 +280,7 @@ jobs:
         with:
           repository: pkhamdee/slotmachine-deployment
           token: ${{ secrets.DEPLOY_REPO_TOKEN }}
+          ref: development
 
       - name: Install kustomize
         run: |
@@ -311,4 +312,4 @@ jobs:
           client: pkhamdee/slotmachine:client-${{ github.sha }}
           server: pkhamdee/slotmachine:server-${{ github.sha }}
           source: pkhamdee/slotmachine@${{ github.sha }}"
-          git push
+          git push origin development
