@@ -21,7 +21,7 @@ jobs:
       actions: read
       contents: read
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
       - name: Initialize CodeQL
         uses: github/codeql-action/init@v3
@@ -41,9 +41,9 @@ jobs:
     name: Build & Unit Test
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v6
         with:
           node-version: 20
           cache: npm
@@ -62,7 +62,7 @@ jobs:
         working-directory: client
 
       - name: Upload client build artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: client-dist
           path: client/dist
@@ -94,9 +94,9 @@ jobs:
           --health-start-period 20s
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v6
         with:
           node-version: 20
           cache: npm
@@ -126,7 +126,7 @@ jobs:
           done
           echo "Server did not start in time" && exit 1
 
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@v6
         with:
           python-version: '3.12'
 
@@ -146,7 +146,7 @@ jobs:
             --html tests/locust-report.html
 
       - name: Upload Locust report
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         if: always()
         with:
           name: locust-performance-report
@@ -165,14 +165,14 @@ jobs:
       contents: read
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
       - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
+        uses: docker/setup-buildx-action@v4
 
       # ── Build images ──────────────────────────────────────────────────────
       - name: Build client image
-        uses: docker/build-push-action@v6
+        uses: docker/build-push-action@v7
         with:
           context: ./client
           push: false
@@ -184,7 +184,7 @@ jobs:
           cache-to: type=gha,scope=client,mode=max
 
       - name: Build server image
-        uses: docker/build-push-action@v6
+        uses: docker/build-push-action@v7
         with:
           context: ./server
           push: false
@@ -235,14 +235,14 @@ jobs:
       # ── Push to DockerHub (main branch only) ──────────────────────────────
       - name: Log in to DockerHub
         if: github.ref == 'refs/heads/main' && github.event_name == 'push'
-        uses: docker/login-action@v3
+        uses: docker/login-action@v4
         with:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}
 
       - name: Push client image
         if: github.ref == 'refs/heads/main' && github.event_name == 'push'
-        uses: docker/build-push-action@v6
+        uses: docker/build-push-action@v7
         with:
           context: ./client
           push: true
@@ -253,7 +253,7 @@ jobs:
 
       - name: Push server image
         if: github.ref == 'refs/heads/main' && github.event_name == 'push'
-        uses: docker/build-push-action@v6
+        uses: docker/build-push-action@v7
         with:
           context: ./server
           push: true
@@ -273,7 +273,7 @@ jobs:
 
     steps:
       - name: Checkout deployment repo
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         with:
           repository: pkhamdee/slotmachine-deployment
           token: ${{ secrets.DEPLOY_REPO_TOKEN }}
