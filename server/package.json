@@ -6,7 +6,7 @@
   "scripts": {
     "dev": "nodemon server.js",
     "start": "node server.js",
-    "test": "node --test src/services/slotEngine.test.js"
+    "test": "node --test src/services/slotEngine.test.js src/middleware/adminAuth.test.js"
   },
   "dependencies": {
     "cors": "^2.8.5",

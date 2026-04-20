@@ -10,4 +10,9 @@ export default defineConfig({
       '/socket.io': { target: 'http://localhost:3001', changeOrigin: true, ws: true },
     },
   },
+  test: {
+    environment: 'jsdom',
+    globals: true,
+    setupFiles: './src/test/setup.js',
+  },
 });
