@@ -214,6 +214,7 @@ jobs:
       - name: ZAP Baseline Scan (PR)
         if: github.event_name == 'pull_request'
         uses: zaproxy/action-baseline@v0.14.0
+        continue-on-error: true       # action uses upload-artifact@v3 (deprecated API); SARIF still captured below
         with:
           target: 'http://localhost:3001'
           rules_file_name: '.zap/rules.tsv'
@@ -224,6 +225,7 @@ jobs:
       - name: ZAP Full Scan (main push)
         if: github.ref == 'refs/heads/main' && github.event_name == 'push'
         uses: zaproxy/action-full-scan@v0.11.0
+        continue-on-error: true       # action uses upload-artifact@v3 (deprecated API); SARIF still captured below
         with:
           target: 'http://localhost:3001'
           rules_file_name: '.zap/rules.tsv'
