@@ -302,7 +302,7 @@ jobs:
           cache-to: type=gha,scope=server,mode=max
 
       # ── Trivy scans ───────────────────────────────────────────────────────
-      - name: Trivy scan — client image
+      - name: Trivy scan — client image (SARIF for Security tab)
         uses: aquasecurity/trivy-action@v0.35.0
         with:
           image-ref: ${{ env.IMAGE }}:client
@@ -313,6 +313,16 @@ jobs:
           exit-code: '0'
           list-all-pkgs: true
 
+      - name: Trivy scan — client image (table for artifact)
+        uses: aquasecurity/trivy-action@v0.35.0
+        with:
+          image-ref: ${{ env.IMAGE }}:client
+          format: table
+          output: trivy-client.txt
+          severity: HIGH,CRITICAL
+          ignore-unfixed: true
+          exit-code: '0'
+
       - name: Upload Trivy client results to GitHub Security
         uses: github/codeql-action/upload-sarif@v4
         if: always()
@@ -320,7 +330,7 @@ jobs:
           sarif_file: trivy-client.sarif
           category: trivy-client
 
-      - name: Trivy scan — server image
+      - name: Trivy scan — server image (SARIF for Security tab)
         uses: aquasecurity/trivy-action@v0.35.0
         with:
           image-ref: ${{ env.IMAGE }}:server
@@ -331,12 +341,32 @@ jobs:
           exit-code: '0'
           list-all-pkgs: true
 
+      - name: Trivy scan — server image (table for artifact)
+        uses: aquasecurity/trivy-action@v0.35.0
+        with:
+          image-ref: ${{ env.IMAGE }}:server
+          format: table
+          output: trivy-server.txt
+          severity: HIGH,CRITICAL
+          ignore-unfixed: true
+          exit-code: '0'
+
       - name: Upload Trivy server results to GitHub Security
         uses: github/codeql-action/upload-sarif@v4
         if: always()
         with:
           sarif_file: trivy-server.sarif
           category: trivy-server
+
+      - name: Upload Trivy table reports as artifact
+        uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: trivy-scan-reports
+          path: |
+            trivy-client.txt
+            trivy-server.txt
+          retention-days: 7
 
       # ── Push to DockerHub (main branch only) ──────────────────────────────
       - name: Log in to DockerHub
