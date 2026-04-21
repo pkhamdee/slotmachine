@@ -155,19 +155,18 @@ jobs:
 
   # ──────────────────────────────────────────────────────────────────────────
   # 4. DAST — OWASP ZAP (runs in parallel with performance-test)
-  #    Baseline scan on PRs (passive only, fast).
-  #    Full scan on main push (active + passive + Ajax Spider).
-  #    Targets the API server directly — the primary attack surface.
-  #    fail_action: false until rules are tuned; tighten to true when ready.
+  #    Runs ZAP Docker directly — avoids the action wrappers that use the
+  #    deprecated upload-artifact@v3 API (api-version=6.0-preview → 400).
+  #    Baseline (passive) on PRs; full scan + Ajax Spider on main push.
+  #    Exit code 2 = ZAP warnings only → continue-on-error keeps job green.
+  #    Reports uploaded via upload-artifact@v7 (current API).
   # ──────────────────────────────────────────────────────────────────────────
   dast-zap:
     name: DAST (OWASP ZAP)
     runs-on: ubuntu-latest
     needs: build-and-test
     permissions:
-      security-events: write
       contents: read
-      issues: write
 
     services:
       mongodb:
@@ -210,35 +209,50 @@ jobs:
             sleep 1
           done
 
-      # Passive-only scan — safe for PRs, no writes to the application
+      - name: Pull ZAP image
+        run: docker pull ghcr.io/zaproxy/zaproxy:stable -q
+
+      # Passive-only — safe for PRs, no active probes sent to the app
       - name: ZAP Baseline Scan (PR)
         if: github.event_name == 'pull_request'
-        uses: zaproxy/action-baseline@v0.14.0
-        continue-on-error: true       # action uses upload-artifact@v3 (deprecated API); SARIF still captured below
-        with:
-          target: 'http://localhost:3001'
-          rules_file_name: '.zap/rules.tsv'
-          allow_issue_writing: false
-          fail_action: false
+        continue-on-error: true       # exit 2 = WARN findings; don't fail the job
+        run: |
+          docker run --rm --network host \
+            -v ${{ github.workspace }}:/zap/wrk/:rw \
+            ghcr.io/zaproxy/zaproxy:stable \
+            zap-baseline.py \
+              -t http://localhost:3001 \
+              -c .zap/rules.tsv \
+              -r zap-report.html \
+              -J zap-report.json \
+              -w zap-report.md
 
-      # Active + passive scan with Ajax Spider — main branch only
+      # Active + passive + Ajax Spider — main branch push only
       - name: ZAP Full Scan (main push)
         if: github.ref == 'refs/heads/main' && github.event_name == 'push'
-        uses: zaproxy/action-full-scan@v0.11.0
-        continue-on-error: true       # action uses upload-artifact@v3 (deprecated API); SARIF still captured below
-        with:
-          target: 'http://localhost:3001'
-          rules_file_name: '.zap/rules.tsv'
-          cmd_options: '-a'           # Ajax Spider for discovered JS-rendered endpoints
-          allow_issue_writing: false
-          fail_action: false
+        continue-on-error: true       # exit 2 = WARN findings; don't fail the job
+        run: |
+          docker run --rm --network host \
+            -v ${{ github.workspace }}:/zap/wrk/:rw \
+            ghcr.io/zaproxy/zaproxy:stable \
+            zap-full-scan.py \
+              -t http://localhost:3001 \
+              -c .zap/rules.tsv \
+              -r zap-report.html \
+              -J zap-report.json \
+              -w zap-report.md \
+              -a
 
-      - name: Upload ZAP SARIF to GitHub Security
-        uses: github/codeql-action/upload-sarif@v3
+      - name: Upload ZAP reports
+        uses: actions/upload-artifact@v7
         if: always()
         with:
-          sarif_file: results.sarif
-          category: owasp-zap
+          name: zap-scan-report
+          path: |
+            zap-report.html
+            zap-report.json
+            zap-report.md
+          retention-days: 7
 
   # ──────────────────────────────────────────────────────────────────────────
   # 5. Container build → Trivy scan → push to DockerHub
