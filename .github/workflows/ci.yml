@@ -8,6 +8,7 @@ on:
 
 env:
   IMAGE: pkhamdee/slotmachine
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true   # opt-in early; becomes default June 2026
 
 jobs:
   # ──────────────────────────────────────────────────────────────────────────
