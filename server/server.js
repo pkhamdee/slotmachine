@@ -13,12 +13,27 @@ import sessionManager from './src/services/SessionManager.js';
 dotenv.config({ path: join(dirname(fileURLToPath(import.meta.url)), '.env') });
 
 const app = express();
-app.use(cors());
+
+app.disable('x-powered-by');
+
+// Restrict CORS to the configured origin (dev: Vite; prod: same-origin via Nginx)
+const corsOrigin = process.env.CORS_ORIGIN || 'http://localhost:5173';
+app.use(cors({ origin: corsOrigin }));
+
+// Security headers on every API response
+app.use((_req, res, next) => {
+  res.setHeader('X-Content-Type-Options', 'nosniff');
+  res.setHeader('X-Frame-Options', 'DENY');
+  res.setHeader('Content-Security-Policy', "default-src 'none'");
+  res.setHeader('Permissions-Policy', 'geolocation=(), camera=(), microphone=()');
+  next();
+});
+
 app.use(express.json());
 app.use('/api', gameRoutes);
 
 const httpServer = createServer(app);
-const io = new Server(httpServer, { cors: { origin: '*' } });
+const io = new Server(httpServer, { cors: { origin: corsOrigin } });
 
 const PORT = process.env.PORT || 3001;
 const MONGO_URI = process.env.MONGO_URI;

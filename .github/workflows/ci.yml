@@ -212,6 +212,10 @@ jobs:
       - name: Pull ZAP image
         run: docker pull ghcr.io/zaproxy/zaproxy:stable -q
 
+      # ZAP Docker runs as a different UID; workspace must be world-writable
+      - name: Allow ZAP to write reports to workspace
+        run: chmod a+w "${{ github.workspace }}"
+
       # Passive-only — safe for PRs, no active probes sent to the app
       - name: ZAP Baseline Scan (PR)
         if: github.event_name == 'pull_request'
