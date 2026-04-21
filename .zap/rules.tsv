@@ -1,0 +1,36 @@
+# OWASP ZAP scan rules — Slot Machine app
+# Stack: Express + MongoDB + Socket.io + React SPA + Nginx + Bearer token auth
+# Format: <alert-id>	<IGNORE|WARN|FAIL>	<description>
+# Default (unspecified): WARN
+
+# ── FAIL: high-confidence, high-impact for this stack ────────────────────────
+40032	FAIL	NoSQL Injection — MongoDB backend
+40012	FAIL	Cross-Site Scripting (Reflected) — player name reflected in responses
+40014	FAIL	Cross-Site Scripting (Persistent/Stored) — player name stored in DB
+40018	FAIL	SQL/NoSQL Injection
+90019	FAIL	Server-Side Code Injection
+10045	FAIL	Source Code Disclosure — must not expose server source
+10093	FAIL	HTTP Parameter Pollution
+
+# ── WARN: security headers absent from nginx.conf (fix before prod hardening) ─
+10020	WARN	Anti-Clickjacking Header Missing (X-Frame-Options or CSP frame-ancestors)
+10021	WARN	X-Content-Type-Options Header Missing
+10035	WARN	Strict-Transport-Security (HSTS) Header Missing
+10038	WARN	Content Security Policy (CSP) Header Not Set
+10055	WARN	CSP Missing
+10036	WARN	Server Version Disclosure via HTTP Response Header
+10011	WARN	Cookie Without Secure Flag
+10054	WARN	Cookie Without SameSite Attribute
+10098	WARN	Cross-Domain Misconfiguration (CORS wildcard)
+10023	WARN	Information Disclosure — Debug Error Messages
+10024	WARN	Information Disclosure — Sensitive Info in URL
+10025	WARN	Information Disclosure — Sensitive Info in HTTP Referrer Header
+10037	WARN	Server Leaks Information via X-Powered-By Header
+6	WARN	Path Traversal
+7	WARN	Remote File Inclusion
+10202	WARN	Absence of Anti-CSRF Tokens — relevant for admin POST endpoints
+
+# ── IGNORE: known false positives for this CI/SPA environment ────────────────
+10027	IGNORE	Suspicious Comments — React/Vite build artifacts contain sourcemap refs
+10096	IGNORE	Timestamp Disclosure — Socket.io handshake response noise
+10049	IGNORE	Storable and Cacheable Content — static SPA assets are intentionally cached

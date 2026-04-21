@@ -154,12 +154,99 @@ jobs:
           retention-days: 7
 
   # ──────────────────────────────────────────────────────────────────────────
-  # 4. Container build → Trivy scan → push to DockerHub
+  # 4. DAST — OWASP ZAP (runs in parallel with performance-test)
+  #    Baseline scan on PRs (passive only, fast).
+  #    Full scan on main push (active + passive + Ajax Spider).
+  #    Targets the API server directly — the primary attack surface.
+  #    fail_action: false until rules are tuned; tighten to true when ready.
+  # ──────────────────────────────────────────────────────────────────────────
+  dast-zap:
+    name: DAST (OWASP ZAP)
+    runs-on: ubuntu-latest
+    needs: build-and-test
+    permissions:
+      security-events: write
+      contents: read
+      issues: write
+
+    services:
+      mongodb:
+        image: mongo:7
+        ports:
+          - 27017:27017
+        options: >-
+          --health-cmd "mongosh --eval \"db.adminCommand('ping')\""
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 10
+          --health-start-period 20s
+
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Start API server
+        working-directory: server
+        env:
+          PORT: 3001
+          MONGO_URI: mongodb://localhost:27017/slotmachine_zap
+          ADMIN_PASSWORD: zap-ci-password
+          SESSION_DURATION: 180
+          LOBBY_DURATION: 10
+        run: node server.js &
+
+      - name: Wait for API server
+        run: |
+          for i in $(seq 1 30); do
+            curl -sf http://localhost:3001/api/sessions/current > /dev/null && echo "API ready" && break
+            [ $i -eq 30 ] && echo "API did not start in time" && exit 1
+            sleep 1
+          done
+
+      # Passive-only scan — safe for PRs, no writes to the application
+      - name: ZAP Baseline Scan (PR)
+        if: github.event_name == 'pull_request'
+        uses: zaproxy/action-baseline@v0.14.0
+        with:
+          target: 'http://localhost:3001'
+          rules_file_name: '.zap/rules.tsv'
+          allow_issue_writing: false
+          fail_action: false
+          artifact_name: zap-baseline-report
+
+      # Active + passive scan with Ajax Spider — main branch only
+      - name: ZAP Full Scan (main push)
+        if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+        uses: zaproxy/action-full-scan@v0.11.0
+        with:
+          target: 'http://localhost:3001'
+          rules_file_name: '.zap/rules.tsv'
+          cmd_options: '-a'           # Ajax Spider for discovered JS-rendered endpoints
+          allow_issue_writing: false
+          fail_action: false
+          artifact_name: zap-full-report
+
+      - name: Upload ZAP SARIF to GitHub Security
+        uses: github/codeql-action/upload-sarif@v3
+        if: always()
+        with:
+          sarif_file: results.sarif
+          category: owasp-zap
+
+  # ──────────────────────────────────────────────────────────────────────────
+  # 5. Container build → Trivy scan → push to DockerHub
   # ──────────────────────────────────────────────────────────────────────────
   container-build-scan-push:
     name: Container Build, Scan & Push
     runs-on: ubuntu-latest
-    needs: [build-and-test, performance-test]
+    needs: [build-and-test, performance-test, dast-zap]
     permissions:
       security-events: write
       contents: read
@@ -263,7 +350,7 @@ jobs:
           cache-from: type=gha,scope=server
 
   # ──────────────────────────────────────────────────────────────────────────
-  # 5. Update GitOps deployment repo with new image tags
+  # 6. Update GitOps deployment repo with new image tags
   # ──────────────────────────────────────────────────────────────────────────
   update-gitops:
     name: Update GitOps Deployment Repo
