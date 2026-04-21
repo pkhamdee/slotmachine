@@ -219,7 +219,6 @@ jobs:
           rules_file_name: '.zap/rules.tsv'
           allow_issue_writing: false
           fail_action: false
-          artifact_name: zap-baseline-report
 
       # Active + passive scan with Ajax Spider — main branch only
       - name: ZAP Full Scan (main push)
@@ -231,7 +230,6 @@ jobs:
           cmd_options: '-a'           # Ajax Spider for discovered JS-rendered endpoints
           allow_issue_writing: false
           fail_action: false
-          artifact_name: zap-full-report
 
       - name: Upload ZAP SARIF to GitHub Security
         uses: github/codeql-action/upload-sarif@v3
