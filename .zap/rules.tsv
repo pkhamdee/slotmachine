@@ -17,7 +17,7 @@
 10021	WARN	X-Content-Type-Options Header Missing
 10035	WARN	Strict-Transport-Security (HSTS) Header Missing
 10038	WARN	Content Security Policy (CSP) Header Not Set
-10055	WARN	CSP Missing
+10055	IGNORE	CSP no-fallback directive check — false positive on Express 404 routes for a JSON API; header is present (10038 PASS) with default-src/form-action/frame-ancestors/base-uri/navigate-to all set to 'none'
 10036	WARN	Server Version Disclosure via HTTP Response Header
 10037	WARN	Server Leaks Information via X-Powered-By Header
 10011	WARN	Cookie Without Secure Flag
