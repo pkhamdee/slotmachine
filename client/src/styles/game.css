@@ -1,3 +1,9 @@
+:root {
+  --reel-w: 110px;
+  --cell-h: 90px;
+  --emoji-sz: 3.2rem;
+}
+
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
 body {
@@ -104,7 +110,8 @@ body {
   align-items: center;
   gap: 14px;
   box-shadow: 0 0 60px #cc00ff22, 0 0 120px #00000088, inset 0 1px 0 #ffffff11;
-  min-width: 600px;
+  width: 100%;
+  max-width: 620px;
 }
 
 /* ── Status Banner ────────────────────────────── */
@@ -169,8 +176,8 @@ body {
 
 /* ── Reel ─────────────────────────────────────── */
 .reel {
-  width: 110px;
-  height: 270px;       /* 3 × 90px cells */
+  width: var(--reel-w);
+  height: calc(var(--cell-h) * 3);
   overflow: hidden;
   border-right: 1px solid #2a1a3a;
   position: relative;
@@ -202,7 +209,7 @@ body {
 
 .reel__cell {
   width: 100%;
-  height: 90px;
+  height: var(--cell-h);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -212,7 +219,7 @@ body {
 }
 
 .reel__emoji {
-  font-size: 3.2rem;
+  font-size: var(--emoji-sz);
   line-height: 1;
   display: block;
   transition: filter 0.1s;
@@ -266,7 +273,7 @@ body {
 /* Payline row highlight overlay (subtle) */
 .reel__payline-mark {
   position: absolute;
-  top: 90px; left: 0; right: 0; height: 90px;
+  top: var(--cell-h); left: 0; right: 0; height: var(--cell-h);
   pointer-events: none;
   z-index: 5;
   background: linear-gradient(180deg, transparent 0%, #ffffff05 50%, transparent 100%);
@@ -829,7 +836,7 @@ body {
   display: flex;
   flex-direction: column;
   gap: 16px;
-  min-width: 280px;
+  width: 280px;
   max-width: 320px;
 }
 
@@ -864,3 +871,89 @@ body {
 .hof-portlet__name  { font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .hof-portlet__score { color: #f5c518; font-weight: bold; }
 .hof-portlet__wins  { color: #f5c518; font-weight: bold; font-size: 0.8rem; }
+
+/* ── Mobile responsive ──────────────────────────── */
+@media (max-width: 600px) {
+  :root {
+    --reel-w: 62px;
+    --cell-h: 52px;
+    --emoji-sz: 1.8rem;
+  }
+
+  .app-header { padding: 10px 12px; }
+  .title { font-size: 1.2rem; letter-spacing: 1px; }
+
+  .game-layout { padding: 8px; gap: 12px; }
+
+  .game-main { width: 100%; }
+
+  .game-sidebar { width: 100%; max-width: 100%; }
+
+  .casino-machine {
+    padding: 12px 8px;
+    border-radius: 16px;
+    gap: 10px;
+  }
+
+  .casino-banner {
+    font-size: 0.82rem;
+    padding: 8px 10px;
+    letter-spacing: 0;
+    min-height: 34px;
+  }
+
+  .reel::before,
+  .reel::after { height: 20px; }
+
+  /* Controls: two rows — [BET | WIN/BAL] then [AUTO MAX | SPIN] */
+  .casino-controls {
+    flex-wrap: wrap;
+    padding: 8px 10px;
+    gap: 8px;
+    border-radius: 10px;
+  }
+
+  .casino-bet-group { order: 0; }
+
+  .casino-stat-group {
+    order: 1;
+    margin-left: auto;
+    gap: 6px;
+  }
+
+  .casino-stat { min-width: 48px; }
+  .casino-stat__value { font-size: 1rem; }
+
+  .casino-adj-btn { width: 28px; height: 28px; font-size: 1rem; }
+
+  .casino-extra-btns { order: 2; flex-direction: row; gap: 6px; }
+
+  .casino-spin-btn {
+    order: 3;
+    flex: 1;
+    min-width: 100px;
+    padding: 12px 10px;
+    font-size: 1.2rem;
+    letter-spacing: 2px;
+    border-radius: 12px;
+  }
+
+  /* Cards */
+  .name-entry__card { padding: 28px 20px; }
+  .winner-card { padding: 28px 20px; }
+  .tournament-over__card { padding: 32px 20px; }
+  .admin-login__card { padding: 24px 20px; }
+}
+
+/* Extra-small phones (≤ 380px) */
+@media (max-width: 380px) {
+  :root {
+    --reel-w: 54px;
+    --cell-h: 44px;
+    --emoji-sz: 1.5rem;
+  }
+
+  .casino-machine { padding: 10px 6px; }
+  .casino-controls { padding: 6px 8px; }
+  .casino-spin-btn { min-width: 80px; }
+}
