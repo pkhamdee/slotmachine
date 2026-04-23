@@ -4,6 +4,8 @@ import HallOfFame from '../models/HallOfFame.js';
 import Player from '../models/Player.js';
 import gameConfig from '../config/gameConfig.js';
 
+const SYNC_CHANNEL = 'sm:sync';
+
 class SessionManager {
   constructor() {
     this.io = null;
@@ -11,27 +13,38 @@ class SessionManager {
     this.tickInterval = null;
     this.scoreboardInterval = null;
     this._syncInterval = null;
+    this._redisPub = null;
     this.roundNumber = 0;
     this._lastScoreboard = [];
     this._lastSessionState = null;
     this._lastWinner = null;
   }
 
-  init(io) {
+  // redisPub  — ioredis client used to publish sync signals (shared with Socket.io adapter)
+  // redisSub  — dedicated ioredis subscriber client (must not be in subscriber mode yet)
+  init(io, redisPub, redisSub) {
     this.io = io;
+    this._redisPub = redisPub || null;
+
+    // Subscribe to sync signals so this pod reacts immediately when any other pod
+    // changes state, rather than waiting for the next DB poll tick.
+    if (redisSub) {
+      redisSub.subscribe(SYNC_CHANNEL, (err) => {
+        if (err) console.error('Redis sync subscribe error:', err.message);
+      });
+      redisSub.on('message', (_ch, _msg) => {
+        this._syncToLocalClients().catch(() => {});
+      });
+    }
 
     // Replay last known state to each new connection.
-    // For pods that never processed startNextRound, build state from DB.
     this.io.on('connection', async (socket) => {
       let state = this._lastSessionState ?? await this._buildStateFromDB().catch(() => null);
       if (!state) {
-        // Check for an ended session so the winner overlay replays correctly.
         const ended = await GameSession.findOne({ state: 'ended' }).sort({ endedAt: -1 }).catch(() => null);
         if (ended) {
           state = { state: 'ended', remainingSeconds: 0, roundNumber: ended.roundNumber, sessionId: ended._id };
         } else {
-          // No sessions in DB at all — system is in waiting state.
-          // This path is hit on non-originating replicas that never called _enterWaiting().
           state = { state: 'waiting', roundNumber: this.roundNumber };
         }
       }
@@ -40,7 +53,10 @@ class SessionManager {
       if (this._lastWinner) socket.emit('session:ended', this._lastWinner);
     });
 
-    this._startSyncLoop();
+    // Fallback: poll every 2 s in case Redis signals are missed.
+    this._syncInterval = setInterval(() => {
+      this._syncToLocalClients().catch(() => {});
+    }, 2000);
   }
 
   getCurrentSession() {
@@ -100,7 +116,6 @@ class SessionManager {
     this.roundNumber += 1;
     const { lobbyDuration, sessionDuration } = gameConfig;
 
-    // Reset every player's balance to 1000 at the start of each round
     await Player.updateMany({}, { $set: { balance: 1000 } });
 
     const session = await GameSession.create({
@@ -113,7 +128,6 @@ class SessionManager {
     this._lastScoreboard = [];
     this.io.emit('session:scoreboard', []);
 
-    // endsAt lets any replica (and the client) calculate remaining time independently
     const endsAt = session.createdAt.getTime() + lobbyDuration * 1000;
     let remaining = lobbyDuration;
     this._emitState({ state: 'lobby', remainingSeconds: remaining, endsAt, roundNumber: this.roundNumber, sessionId: session._id });
@@ -151,7 +165,6 @@ class SessionManager {
       }
     }, 1000);
 
-    // Push scoreboard every second
     this.scoreboardInterval = setInterval(() => {
       this._pushScoreboard(session._id).catch(console.error);
     }, 1000);
@@ -161,7 +174,6 @@ class SessionManager {
     session.state = 'ended';
     session.endedAt = new Date();
 
-    // Find all players who participated this session, rank by current balance
     const sessions = await PlayerSession.find({ sessionId: session._id }).select('playerId playerName');
     let topPlayer = null;
 
@@ -197,13 +209,12 @@ class SessionManager {
       ? { winnerName: topPlayer.playerName, winnerBalance: topPlayer.balance, roundNumber: this.roundNumber }
       : { winnerName: null, winnerBalance: 0, roundNumber: this.roundNumber };
 
-    this._emitState({ state: 'ended', remainingSeconds: 0, roundNumber: this.roundNumber, sessionId: session._id });
+    // Save winner before emitting so _syncToLocalClients on other pods can read it from DB.
     this._lastWinner = winnerPayload;
+    this._emitState({ state: 'ended', remainingSeconds: 0, roundNumber: this.roundNumber, sessionId: session._id });
     this.io.emit('session:ended', winnerPayload);
 
     await this._pushScoreboard(session._id);
-
-    // Wait for admin to start the next round — do NOT auto-transition
   }
 
   async _pushScoreboard(sessionId) {
@@ -223,7 +234,7 @@ class SessionManager {
     const ranked = sessions
       .map((s) => ({
         playerName: s.playerName,
-        balance: balanceMap[s.playerId] ?? 0,   // current credit balance, NOT accumulated payouts
+        balance: balanceMap[s.playerId] ?? 0,
         spinCount: s.spinCount,
       }))
       .sort((a, b) => b.balance - a.balance)
@@ -234,31 +245,81 @@ class SessionManager {
     this.io.emit('session:scoreboard', ranked);
   }
 
-  // Poll MongoDB every second and push state to THIS pod's local sockets whenever
-  // the session state transitions (waiting→lobby, lobby→active, active→ended, etc.).
-  // Uses io.local so the emit stays on this pod and doesn't re-enter the Redis adapter,
-  // avoiding broadcast loops. This is the fallback path for replicas that never ran
-  // _emitState() because they didn't originate the round.
-  _startSyncLoop() {
-    this._syncInterval = setInterval(async () => {
-      try {
-        let state = await this._buildStateFromDB();
-        if (!state) {
-          const ended = await GameSession.findOne({ state: 'ended' }).sort({ endedAt: -1 });
-          state = ended
-            ? { state: 'ended', remainingSeconds: 0, roundNumber: ended.roundNumber, sessionId: ended._id }
-            : { state: 'waiting', roundNumber: this.roundNumber };
+  // Push all relevant events to THIS pod's local sockets by reading from MongoDB.
+  // Called on every sm:sync Redis signal (near-instant) and every 2 s as a fallback.
+  // io.local.emit targets only this pod — no re-entry into the Redis adapter.
+  async _syncToLocalClients() {
+    let state = await this._buildStateFromDB();
+    let endedSession = null;
+
+    if (!state) {
+      endedSession = await GameSession.findOne({ state: 'ended' }).sort({ endedAt: -1 });
+      state = endedSession
+        ? { state: 'ended', remainingSeconds: 0, roundNumber: endedSession.roundNumber, sessionId: endedSession._id }
+        : { state: 'waiting', roundNumber: this.roundNumber };
+    }
+
+    const last = this._lastSessionState;
+    const changed =
+      last?.state !== state.state ||
+      last?.sessionId?.toString() !== state.sessionId?.toString();
+
+    if (changed) {
+      this._lastSessionState = state;
+      this.io.local.emit('session:state', state);
+
+      if (state.state === 'ended') {
+        // Read winner from DB so all pods can emit it, not just the originating pod.
+        if (!endedSession) {
+          endedSession = await GameSession.findOne({ _id: state.sessionId });
         }
-        const last = this._lastSessionState;
-        const changed =
-          last?.state !== state.state ||
-          last?.sessionId?.toString() !== state.sessionId?.toString();
-        if (changed) {
-          this._lastSessionState = state;
-          this.io.local.emit('session:state', state);
-        }
-      } catch (_) { /* ignore — transient DB errors shouldn't crash the loop */ }
-    }, 1000);
+        const winnerPayload = endedSession?.winnerName
+          ? { winnerName: endedSession.winnerName, winnerBalance: endedSession.winnerPayout, roundNumber: endedSession.roundNumber }
+          : { winnerName: null, winnerBalance: 0, roundNumber: state.roundNumber };
+        this._lastWinner = winnerPayload;
+        this.io.local.emit('session:ended', winnerPayload);
+      }
+
+      if (state.state === 'lobby' || state.state === 'waiting') {
+        this._lastWinner = null;
+        this._lastScoreboard = [];
+        this.io.local.emit('session:scoreboard', []);
+      }
+    }
+
+    // Always refresh scoreboard during active rounds so every pod's clients stay in sync.
+    if (state.state === 'active' && state.sessionId) {
+      await this._pushLocalScoreboard(state.sessionId);
+    }
+  }
+
+  // Like _pushScoreboard but emits only to local sockets (no Redis adapter).
+  async _pushLocalScoreboard(sessionId) {
+    const sessions = await PlayerSession.find({ sessionId })
+      .select('playerId playerName spinCount -_id');
+
+    if (sessions.length === 0) {
+      this._lastScoreboard = [];
+      this.io.local.emit('session:scoreboard', []);
+      return;
+    }
+
+    const playerIds = sessions.map((s) => s.playerId);
+    const players = await Player.find({ playerId: { $in: playerIds } }).select('playerId balance -_id');
+    const balanceMap = Object.fromEntries(players.map((p) => [p.playerId, p.balance]));
+
+    const ranked = sessions
+      .map((s) => ({
+        playerName: s.playerName,
+        balance: balanceMap[s.playerId] ?? 0,
+        spinCount: s.spinCount,
+      }))
+      .sort((a, b) => b.balance - a.balance)
+      .slice(0, 10)
+      .map((s, i) => ({ rank: i + 1, playerName: s.playerName, balance: s.balance, spinCount: s.spinCount }));
+
+    this._lastScoreboard = ranked;
+    this.io.local.emit('session:scoreboard', ranked);
   }
 
   // Reconstruct current session state from MongoDB so any replica can serve it.
@@ -278,9 +339,16 @@ class SessionManager {
     return null;
   }
 
+  // Emit state via Socket.io (Redis adapter broadcasts to all pods) and publish
+  // a lightweight sm:sync signal so all pods immediately call _syncToLocalClients().
   _emitState(payload) {
     this._lastSessionState = payload;
     this.io.emit('session:state', payload);
+    if (this._redisPub) {
+      this._redisPub.publish(SYNC_CHANNEL, '1').catch((err) => {
+        console.error('Redis sync publish error:', err.message);
+      });
+    }
   }
 
   async pushScoreboard(sessionId) {
@@ -293,7 +361,6 @@ class SessionManager {
       { $inc: { totalPayout: payout, spinCount: 1 }, $setOnInsert: { playerName } },
       { upsert: true }
     );
-    // Scoreboard is pushed by the 3-second interval — no per-spin push needed
   }
 }
 

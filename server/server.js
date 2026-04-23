@@ -39,9 +39,11 @@ const io = new Server(httpServer, { cors: { origin: corsOrigin } });
 
 const REDIS_URL = process.env.REDIS_URL || 'redis://redis:6379';
 const pubClient = new Redis(REDIS_URL);
-const subClient = pubClient.duplicate();
+const subClient = pubClient.duplicate();   // used by Socket.io adapter (subscriber mode)
+const sigSubClient = pubClient.duplicate(); // used by SessionManager for sm:sync signals
 pubClient.on('error', (err) => console.error('Redis pub error:', err.message));
 subClient.on('error', (err) => console.error('Redis sub error:', err.message));
+sigSubClient.on('error', (err) => console.error('Redis sig error:', err.message));
 io.adapter(createAdapter(pubClient, subClient));
 
 const PORT = process.env.PORT || 3001;
@@ -51,7 +53,7 @@ mongoose
   .connect(MONGO_URI)
   .then(async () => {
     console.log('Connected to MongoDB');
-    sessionManager.init(io);
+    sessionManager.init(io, pubClient, sigSubClient);
     await sessionManager.start();
     httpServer.listen(PORT, () => console.log(`Server running on port ${PORT}`));
   })
