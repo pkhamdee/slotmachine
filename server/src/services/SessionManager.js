@@ -10,6 +10,7 @@ class SessionManager {
     this.currentSession = null;
     this.tickInterval = null;
     this.scoreboardInterval = null;
+    this._syncInterval = null;
     this.roundNumber = 0;
     this._lastScoreboard = [];
     this._lastSessionState = null;
@@ -39,6 +40,7 @@ class SessionManager {
       if (this._lastWinner) socket.emit('session:ended', this._lastWinner);
     });
 
+    this._startSyncLoop();
   }
 
   getCurrentSession() {
@@ -230,6 +232,33 @@ class SessionManager {
 
     this._lastScoreboard = ranked;
     this.io.emit('session:scoreboard', ranked);
+  }
+
+  // Poll MongoDB every second and push state to THIS pod's local sockets whenever
+  // the session state transitions (waiting→lobby, lobby→active, active→ended, etc.).
+  // Uses io.local so the emit stays on this pod and doesn't re-enter the Redis adapter,
+  // avoiding broadcast loops. This is the fallback path for replicas that never ran
+  // _emitState() because they didn't originate the round.
+  _startSyncLoop() {
+    this._syncInterval = setInterval(async () => {
+      try {
+        let state = await this._buildStateFromDB();
+        if (!state) {
+          const ended = await GameSession.findOne({ state: 'ended' }).sort({ endedAt: -1 });
+          state = ended
+            ? { state: 'ended', remainingSeconds: 0, roundNumber: ended.roundNumber, sessionId: ended._id }
+            : { state: 'waiting', roundNumber: this.roundNumber };
+        }
+        const last = this._lastSessionState;
+        const changed =
+          last?.state !== state.state ||
+          last?.sessionId?.toString() !== state.sessionId?.toString();
+        if (changed) {
+          this._lastSessionState = state;
+          this.io.local.emit('session:state', state);
+        }
+      } catch (_) { /* ignore — transient DB errors shouldn't crash the loop */ }
+    }, 1000);
   }
 
   // Reconstruct current session state from MongoDB so any replica can serve it.
