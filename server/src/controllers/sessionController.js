@@ -1,5 +1,7 @@
 import HallOfFame from '../models/HallOfFame.js';
 import Player from '../models/Player.js';
+import GameSession from '../models/GameSession.js';
+import gameConfig from '../config/gameConfig.js';
 import sessionManager from '../services/SessionManager.js';
 import { adminSessionToken } from '../middleware/adminAuth.js';
 
@@ -29,10 +31,34 @@ export async function getHallOfFame(req, res) {
   res.json(entries);
 }
 
-export function getSessionState(req, res) {
-  const session = sessionManager.getCurrentSession();
-  if (!session) return res.json({ state: 'waiting', roundNumber: 0 });
-  res.json({ state: session.state, sessionId: session._id, roundNumber: session.roundNumber });
+export async function getSessionState(req, res) {
+  // Always query MongoDB so any replica returns the correct state and endsAt.
+  const session = await GameSession.findOne({ state: { $in: ['lobby', 'active'] } }).sort({ createdAt: -1 });
+
+  if (session?.state === 'lobby') {
+    const endsAt = session.createdAt.getTime() + gameConfig.lobbyDuration * 1000;
+    return res.json({
+      state: 'lobby', roundNumber: session.roundNumber, sessionId: session._id,
+      endsAt, remainingSeconds: Math.max(0, Math.round((endsAt - Date.now()) / 1000)),
+    });
+  }
+  if (session?.state === 'active') {
+    const endsAt = session.startedAt.getTime() + session.durationSeconds * 1000;
+    return res.json({
+      state: 'active', roundNumber: session.roundNumber, sessionId: session._id,
+      endsAt, remainingSeconds: Math.max(0, Math.round((endsAt - Date.now()) / 1000)),
+    });
+  }
+
+  const ended = await GameSession.findOne({ state: 'ended' }).sort({ endedAt: -1 });
+  if (ended) {
+    const winner = ended.winnerName
+      ? { winnerName: ended.winnerName, winnerBalance: ended.winnerPayout, roundNumber: ended.roundNumber }
+      : null;
+    return res.json({ state: 'ended', roundNumber: ended.roundNumber, sessionId: ended._id, remainingSeconds: 0, winner });
+  }
+
+  res.json({ state: 'waiting', roundNumber: 0 });
 }
 
 export async function startNextRound(req, res) {
