@@ -71,7 +71,8 @@ export default function AdminPage({ sessionState, scoreboard }) {
 
   const state = sessionState?.state;
   const roundNumber = sessionState?.roundNumber ?? 0;
-  const canStart = state === 'waiting' || state === 'ended';
+  // Allow attempt when state is unknown (connecting) — server guards against double-starts
+  const canStart = state !== 'lobby' && state !== 'active';
 
   const stateLabels = {
     waiting: 'Waiting to start',

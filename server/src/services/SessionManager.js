@@ -24,11 +24,17 @@ class SessionManager {
     this.io.on('connection', async (socket) => {
       let state = this._lastSessionState ?? await this._buildStateFromDB().catch(() => null);
       if (!state) {
-        // Also check for an ended session so the winner overlay replays correctly.
+        // Check for an ended session so the winner overlay replays correctly.
         const ended = await GameSession.findOne({ state: 'ended' }).sort({ endedAt: -1 }).catch(() => null);
-        if (ended) state = { state: 'ended', remainingSeconds: 0, roundNumber: ended.roundNumber, sessionId: ended._id };
+        if (ended) {
+          state = { state: 'ended', remainingSeconds: 0, roundNumber: ended.roundNumber, sessionId: ended._id };
+        } else {
+          // No sessions in DB at all — system is in waiting state.
+          // This path is hit on non-originating replicas that never called _enterWaiting().
+          state = { state: 'waiting', roundNumber: this.roundNumber };
+        }
       }
-      if (state) socket.emit('session:state', state);
+      socket.emit('session:state', state);
       if (this._lastScoreboard.length) socket.emit('session:scoreboard', this._lastScoreboard);
       if (this._lastWinner) socket.emit('session:ended', this._lastWinner);
     });
