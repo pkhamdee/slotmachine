@@ -110,7 +110,6 @@ body {
   align-items: center;
   gap: 14px;
   box-shadow: 0 0 60px #cc00ff22, 0 0 120px #00000088, inset 0 1px 0 #ffffff11;
-  width: 100%;
   max-width: 620px;
 }
 
@@ -890,6 +889,7 @@ body {
   .game-sidebar { width: 100%; max-width: 100%; }
 
   .casino-machine {
+    width: 100%;
     padding: 12px 8px;
     border-radius: 16px;
     gap: 10px;
