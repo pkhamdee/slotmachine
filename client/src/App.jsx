@@ -13,6 +13,7 @@ export default function App() {
   const [player, setPlayer] = useState(null);
   const [view, setView] = useState('game');
   const [showWinner, setShowWinner] = useState(false);
+  const [dismissedSessionId, setDismissedSessionId] = useState(null);
   const { sessionState, scoreboard, winner, balanceReset } = useSession();
 
   // Auto-login returning player from localStorage
@@ -36,22 +37,29 @@ export default function App() {
       .catch(console.error);
   }, [balanceReset]);
 
-  // Show overlay when round ends with a winner
+  // Show overlay when round ends with a winner — but only once per session.
+  // winner arrives as a new object on every Socket.io reconnect / replay,
+  // so guard with dismissedSessionId instead of relying on reference equality.
   useEffect(() => {
-    if (winner && sessionState?.state === 'ended') {
+    const sessionId = sessionState?.sessionId?.toString() ?? null;
+    if (winner && sessionState?.state === 'ended' && sessionId !== dismissedSessionId) {
       setShowWinner(true);
-      setView('game'); // force back to game view so overlay is visible
+      setView('game');
     }
-  }, [winner, sessionState?.state]);
+  }, [winner, sessionState?.state, sessionState?.sessionId, dismissedSessionId]);
 
-  // Auto-hide overlay when admin starts next round
+  // Auto-hide overlay and reset dismissed guard when a new round begins
   useEffect(() => {
     if (sessionState?.state === 'lobby' || sessionState?.state === 'waiting') {
       setShowWinner(false);
+      setDismissedSessionId(null);
     }
   }, [sessionState?.state]);
 
-  const dismissWinner = useCallback(() => setShowWinner(false), []);
+  const dismissWinner = useCallback(() => {
+    setShowWinner(false);
+    setDismissedSessionId(sessionState?.sessionId?.toString() ?? null);
+  }, [sessionState?.sessionId]);
 
   if (!player) return <NameEntry onJoin={setPlayer} />;
 
