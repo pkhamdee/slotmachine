@@ -18,14 +18,21 @@ class SessionManager {
 
   init(io) {
     this.io = io;
+
+    // Replay last known state to each new connection.
+    // For pods that never processed startNextRound, build state from DB.
     this.io.on('connection', async (socket) => {
-      // On pods that didn't process startNextRound, _lastSessionState is null.
-      // Fall back to MongoDB so every replica can serve the current state.
-      const state = this._lastSessionState ?? await this._buildStateFromDB().catch(() => null);
+      let state = this._lastSessionState ?? await this._buildStateFromDB().catch(() => null);
+      if (!state) {
+        // Also check for an ended session so the winner overlay replays correctly.
+        const ended = await GameSession.findOne({ state: 'ended' }).sort({ endedAt: -1 }).catch(() => null);
+        if (ended) state = { state: 'ended', remainingSeconds: 0, roundNumber: ended.roundNumber, sessionId: ended._id };
+      }
       if (state) socket.emit('session:state', state);
       if (this._lastScoreboard.length) socket.emit('session:scoreboard', this._lastScoreboard);
       if (this._lastWinner) socket.emit('session:ended', this._lastWinner);
     });
+
   }
 
   getCurrentSession() {
@@ -42,9 +49,8 @@ class SessionManager {
   }
 
   async startNextRound() {
-    if (this.currentSession?.state === 'active') {
-      throw new Error('A round is already in progress');
-    }
+    const live = await GameSession.findOne({ state: { $in: ['lobby', 'active'] } });
+    if (live) throw new Error('A round is already in progress');
     await this._beginLobby();
   }
 

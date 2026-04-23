@@ -6,6 +6,8 @@ import cors from 'cors';
 import mongoose from 'mongoose';
 import dotenv from 'dotenv';
 import { Server } from 'socket.io';
+import Redis from 'ioredis';
+import { createAdapter } from '@socket.io/redis-adapter';
 import gameRoutes from './src/routes/gameRoutes.js';
 import sessionManager from './src/services/SessionManager.js';
 
@@ -34,6 +36,13 @@ app.use('/api', gameRoutes);
 
 const httpServer = createServer(app);
 const io = new Server(httpServer, { cors: { origin: corsOrigin } });
+
+const REDIS_URL = process.env.REDIS_URL || 'redis://redis:6379';
+const pubClient = new Redis(REDIS_URL);
+const subClient = pubClient.duplicate();
+pubClient.on('error', (err) => console.error('Redis pub error:', err.message));
+subClient.on('error', (err) => console.error('Redis sub error:', err.message));
+io.adapter(createAdapter(pubClient, subClient));
 
 const PORT = process.env.PORT || 3001;
 const MONGO_URI = process.env.MONGO_URI;
