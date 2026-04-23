@@ -93,6 +93,15 @@ jobs:
           --health-timeout 5s
           --health-retries 10
           --health-start-period 20s
+      redis:
+        image: redis:7-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 10
 
     steps:
       - uses: actions/checkout@v6
@@ -110,6 +119,7 @@ jobs:
         env:
           PORT: 3001
           MONGO_URI: mongodb://localhost:27017/slotmachine_perf
+          REDIS_URL: redis://localhost:6379
           ADMIN_PASSWORD: ${{ secrets.ADMIN_PASSWORD }}
           SESSION_DURATION: 180
           LOBBY_DURATION: 3
@@ -180,6 +190,15 @@ jobs:
           --health-timeout 5s
           --health-retries 10
           --health-start-period 20s
+      redis:
+        image: redis:7-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 10
 
     steps:
       - uses: actions/checkout@v6
@@ -197,6 +216,7 @@ jobs:
         env:
           PORT: 3001
           MONGO_URI: mongodb://localhost:27017/slotmachine_zap
+          REDIS_URL: redis://localhost:6379
           ADMIN_PASSWORD: zap-ci-password
           SESSION_DURATION: 180
           LOBBY_DURATION: 10
