@@ -58,7 +58,7 @@ export default function App() {
   return (
     <div className="app">
       <header className="app-header">
-        <h1 className="title">🎰 NKP Slot Machine — {player.name}</h1>
+        <h1 className="title">🎰 Nutanix Slot Machine — {player.name}</h1>
         <nav className="nav">
           <button className={`nav-btn ${view === 'game'  ? 'nav-btn--active' : ''}`} onClick={() => setView('game')}>Game</button>
           <button className={`nav-btn ${view === 'admin' ? 'nav-btn--active' : ''}`} onClick={() => setView('admin')}>Admin</button>
