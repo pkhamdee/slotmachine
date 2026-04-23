@@ -18,8 +18,11 @@ class SessionManager {
 
   init(io) {
     this.io = io;
-    this.io.on('connection', (socket) => {
-      if (this._lastSessionState) socket.emit('session:state', this._lastSessionState);
+    this.io.on('connection', async (socket) => {
+      // On pods that didn't process startNextRound, _lastSessionState is null.
+      // Fall back to MongoDB so every replica can serve the current state.
+      const state = this._lastSessionState ?? await this._buildStateFromDB().catch(() => null);
+      if (state) socket.emit('session:state', state);
       if (this._lastScoreboard.length) socket.emit('session:scoreboard', this._lastScoreboard);
       if (this._lastWinner) socket.emit('session:ended', this._lastWinner);
     });
@@ -96,12 +99,14 @@ class SessionManager {
     this._lastScoreboard = [];
     this.io.emit('session:scoreboard', []);
 
+    // endsAt lets any replica (and the client) calculate remaining time independently
+    const endsAt = session.createdAt.getTime() + lobbyDuration * 1000;
     let remaining = lobbyDuration;
-    this._emitState({ state: 'lobby', remainingSeconds: remaining, roundNumber: this.roundNumber, sessionId: session._id });
+    this._emitState({ state: 'lobby', remainingSeconds: remaining, endsAt, roundNumber: this.roundNumber, sessionId: session._id });
 
     this.tickInterval = setInterval(async () => {
       remaining--;
-      this._emitState({ state: 'lobby', remainingSeconds: remaining, roundNumber: this.roundNumber, sessionId: session._id });
+      this._emitState({ state: 'lobby', remainingSeconds: remaining, endsAt, roundNumber: this.roundNumber, sessionId: session._id });
       if (remaining <= 0) {
         clearInterval(this.tickInterval);
         this.tickInterval = null;
@@ -116,12 +121,13 @@ class SessionManager {
     await session.save();
     this.currentSession = session;
 
+    const endsAt = session.startedAt.getTime() + gameConfig.sessionDuration * 1000;
     let remaining = gameConfig.sessionDuration;
-    this._emitState({ state: 'active', remainingSeconds: remaining, roundNumber: this.roundNumber, sessionId: session._id });
+    this._emitState({ state: 'active', remainingSeconds: remaining, endsAt, roundNumber: this.roundNumber, sessionId: session._id });
 
     this.tickInterval = setInterval(async () => {
       remaining--;
-      this._emitState({ state: 'active', remainingSeconds: remaining, roundNumber: this.roundNumber, sessionId: session._id });
+      this._emitState({ state: 'active', remainingSeconds: remaining, endsAt, roundNumber: this.roundNumber, sessionId: session._id });
       if (remaining <= 0) {
         clearInterval(this.tickInterval);
         this.tickInterval = null;
@@ -212,6 +218,23 @@ class SessionManager {
 
     this._lastScoreboard = ranked;
     this.io.emit('session:scoreboard', ranked);
+  }
+
+  // Reconstruct current session state from MongoDB so any replica can serve it.
+  async _buildStateFromDB() {
+    const session = await GameSession.findOne({ state: { $in: ['lobby', 'active'] } }).sort({ createdAt: -1 });
+    if (!session) return null;
+    if (session.state === 'lobby') {
+      const endsAt = session.createdAt.getTime() + gameConfig.lobbyDuration * 1000;
+      const remaining = Math.max(0, Math.round((endsAt - Date.now()) / 1000));
+      return { state: 'lobby', remainingSeconds: remaining, endsAt, roundNumber: session.roundNumber, sessionId: session._id };
+    }
+    if (session.state === 'active') {
+      const endsAt = session.startedAt.getTime() + session.durationSeconds * 1000;
+      const remaining = Math.max(0, Math.round((endsAt - Date.now()) / 1000));
+      return { state: 'active', remainingSeconds: remaining, endsAt, roundNumber: session.roundNumber, sessionId: session._id };
+    }
+    return null;
   }
 
   _emitState(payload) {

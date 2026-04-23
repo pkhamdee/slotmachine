@@ -1,6 +1,7 @@
 import { randomUUID } from 'crypto';
 import Player from '../models/Player.js';
 import GameRound from '../models/GameRound.js';
+import GameSession from '../models/GameSession.js';
 import PlayerSession from '../models/PlayerSession.js';
 import { spinReels, evaluatePayout } from '../services/slotEngine.js';
 import sessionManager from '../services/SessionManager.js';
@@ -29,8 +30,8 @@ export async function getPlayer(req, res) {
 }
 
 export async function spin(req, res) {
-  const session = sessionManager.getCurrentSession();
-  if (!session || session.state !== 'active') {
+  const session = await GameSession.findOne({ state: 'active' });
+  if (!session) {
     return res.status(403).json({ error: 'No active session. Wait for the next round.' });
   }
 
