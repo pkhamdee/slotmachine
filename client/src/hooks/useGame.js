@@ -27,6 +27,7 @@ export function useGame(player, setPlayer, sessionState) {
   const autoSpinRef = useRef(false);
   const spinRef = useRef(null);
   const preBetBalance = useRef(null);
+  const spinAbortedRef = useRef(false);
 
   const clearSpinTimers = () => {
     spinTimers.current.forEach(clearTimeout);
@@ -46,6 +47,7 @@ export function useGame(player, setPlayer, sessionState) {
     setOutcome(null);
     setError(null);
     pendingResult.current = null;
+    spinAbortedRef.current = false;
 
     // Immediately deduct bet so balance feels responsive
     preBetBalance.current = player.balance;
@@ -56,6 +58,8 @@ export function useGame(player, setPlayer, sessionState) {
         apiSpin(player.playerId, bet),
         new Promise((r) => setTimeout(r, MIN_SPIN_MS)),
       ]);
+
+      if (spinAbortedRef.current) return;
       pendingResult.current = result;
 
       // Stagger reel stops left-to-right
@@ -78,6 +82,7 @@ export function useGame(player, setPlayer, sessionState) {
         spinTimers.current.push(t);
       }
     } catch (e) {
+      if (spinAbortedRef.current) return;
       setError(e.message);
       // Restore balance on error
       if (preBetBalance.current !== null) {
@@ -106,6 +111,7 @@ export function useGame(player, setPlayer, sessionState) {
   // Abort in-flight spin and restore balance when round ends mid-spin
   useEffect(() => {
     if (sessionState?.state !== 'active' && spinning) {
+      spinAbortedRef.current = true;
       spinTimers.current.forEach(clearTimeout);
       spinTimers.current = [];
       setSpinning(false);
