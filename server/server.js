@@ -18,6 +18,9 @@ const app = express();
 
 app.disable('x-powered-by');
 
+// Health check — registered first so ALB probes never hit security middleware or MongoDB.
+app.get('/health', (_req, res) => res.sendStatus(200));
+
 // Restrict CORS to the configured origin (dev: Vite; prod: same-origin via Nginx)
 const corsOrigin = process.env.CORS_ORIGIN || 'http://localhost:5173';
 app.use(cors({ origin: corsOrigin }));
@@ -35,7 +38,13 @@ app.use(express.json());
 app.use('/api', gameRoutes);
 
 const httpServer = createServer(app);
-const io = new Server(httpServer, { cors: { origin: corsOrigin } });
+const io = new Server(httpServer, {
+  cors: { origin: corsOrigin },
+  // Ping every 10 s — well under ALB's 60 s idle timeout.
+  // Default 25 s is too close; GC pauses or CPU spikes can push the gap past 60 s.
+  pingInterval: 10000,
+  pingTimeout:   5000,
+});
 
 const REDIS_URL = process.env.REDIS_URL || 'redis://redis:6379';
 const pubClient = new Redis(REDIS_URL);
