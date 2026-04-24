@@ -44,7 +44,7 @@ describe('getPlayer()', () => {
 
     const result = await getPlayer('abc');
 
-    expect(fetch).toHaveBeenCalledWith('/api/players/abc');
+    expect(fetch).toHaveBeenCalledWith('/api/players/abc', expect.objectContaining({}));
     expect(result).toEqual(player);
   });
 
@@ -89,7 +89,7 @@ describe('getHallOfFame()', () => {
 
     await getHallOfFame();
 
-    expect(fetch).toHaveBeenCalledWith('/api/hall-of-fame?limit=20');
+    expect(fetch).toHaveBeenCalledWith('/api/hall-of-fame?limit=20', expect.objectContaining({}));
   });
 
   it('GETs /api/hall-of-fame with custom limit', async () => {
@@ -97,7 +97,7 @@ describe('getHallOfFame()', () => {
 
     await getHallOfFame(3);
 
-    expect(fetch).toHaveBeenCalledWith('/api/hall-of-fame?limit=3');
+    expect(fetch).toHaveBeenCalledWith('/api/hall-of-fame?limit=3', expect.objectContaining({}));
   });
 
   it('returns entries from the API', async () => {
