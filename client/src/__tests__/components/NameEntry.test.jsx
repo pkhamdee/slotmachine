@@ -70,7 +70,7 @@ describe('NameEntry', () => {
     await userEvent.click(screen.getByRole('button', { name: /Join Game/ }));
 
     await waitFor(() => {
-      expect(screen.getByText('Name is already taken')).toBeInTheDocument();
+      expect(screen.getByText(/Name is already taken/)).toBeInTheDocument();
     });
   });
 

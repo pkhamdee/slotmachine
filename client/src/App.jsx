@@ -23,8 +23,8 @@ export default function App() {
       getPlayer(storedId)
         .then(setPlayer)
         .catch(() => {
+          // Keep slotPlayerName so NameEntry pre-fills it and the player knows which name is theirs.
           localStorage.removeItem('slotPlayerId');
-          localStorage.removeItem('slotPlayerName');
         });
     }
   }, []);

@@ -34,7 +34,10 @@ export default function NameEntry({ onJoin }) {
       localStorage.setItem('slotPlayerId', player.playerId);
       onJoin(player);
     } catch (e) {
-      setError(e.message);
+      const msg = e.message.includes('already taken')
+        ? 'Name is already taken. Use the same browser/device you originally joined with, or ask an admin to purge players.'
+        : e.message;
+      setError(msg);
     } finally {
       setLoading(false);
     }
