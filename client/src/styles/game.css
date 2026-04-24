@@ -340,7 +340,7 @@ body {
   background: #1a0030;
   border: 1px solid #cc00ff66;
   color: #cc88ff;
-  width: 32px; height: 32px;
+  width: 40px; height: 40px;
   border-radius: 8px;
   font-size: 1.1rem;
   font-weight: bold;
@@ -363,6 +363,7 @@ body {
   color: #888;
   border-radius: 6px;
   padding: 4px 10px;
+  min-height: 36px;
   font-size: 0.7rem;
   font-weight: bold;
   letter-spacing: 1px;
@@ -550,6 +551,7 @@ body {
   box-shadow: 0 0 80px #f5c51888;
   animation: slide-up 0.5s cubic-bezier(0.34, 1.56, 0.64, 1);
   max-width: 480px; width: 90%;
+  max-height: 90vh; overflow-y: auto;
 }
 
 @keyframes slide-up { from { transform: translateY(60px) scale(0.8); opacity: 0; } to { transform: translateY(0) scale(1); opacity: 1; } }
@@ -640,6 +642,7 @@ body {
 .name-entry__qr-canvas {
   border-radius: 8px;
   display: block;
+  max-width: 100%; height: auto;
 }
 .name-entry__qr-label {
   font-size: 0.75rem;
@@ -773,7 +776,7 @@ body {
   font-size: 0.85rem;
 }
 .admin-list__rank  { color: #555; }
-.admin-list__name  { font-weight: 600; }
+.admin-list__name  { font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
 .admin-list__score { color: #f5c518; font-weight: bold; }
 .admin-list__meta  { color: #555; font-size: 0.8rem; }
 
@@ -888,6 +891,9 @@ body {
 
   .game-sidebar { width: 100%; max-width: 100%; }
 
+  .admin-list__item { grid-template-columns: 2rem 1fr auto; }
+  .admin-list__meta { display: none; }
+
   .casino-machine {
     width: 100%;
     padding: 12px 8px;
@@ -924,7 +930,7 @@ body {
   .casino-stat { min-width: 48px; }
   .casino-stat__value { font-size: 1rem; }
 
-  .casino-adj-btn { width: 28px; height: 28px; font-size: 1rem; }
+  .casino-adj-btn { width: 40px; height: 40px; font-size: 1rem; }
 
   .casino-extra-btns { order: 2; flex-direction: row; gap: 6px; }
 

@@ -103,6 +103,20 @@ export function useGame(player, setPlayer, sessionState) {
     }
   }, [spinning, autoSpin, sessionState?.state, player?.balance, bet]);
 
+  // Abort in-flight spin and restore balance when round ends mid-spin
+  useEffect(() => {
+    if (sessionState?.state !== 'active' && spinning) {
+      spinTimers.current.forEach(clearTimeout);
+      spinTimers.current = [];
+      setSpinning(false);
+      setStoppedReels(5);
+      if (preBetBalance.current !== null) {
+        setPlayer((prev) => ({ ...prev, balance: preBetBalance.current }));
+        preBetBalance.current = null;
+      }
+    }
+  }, [sessionState?.state, spinning, setPlayer]);
+
   // Stop auto-spin when round ends or balance insufficient
   useEffect(() => {
     if (sessionState?.state !== 'active' || (player?.balance ?? 0) < bet) {

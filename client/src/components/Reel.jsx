@@ -12,6 +12,7 @@ export default function Reel({ col, reelIndex, stoppedReels, matchCount }) {
   const [cells, setCells] = useState(() => [pick(), pick(), pick()]);
   const [landing, setLanding] = useState(false);
   const intervalRef = useRef(null);
+  const landingTimerRef = useRef(null);
   const prevSpinning = useRef(false);
 
   useEffect(() => {
@@ -32,12 +33,15 @@ export default function Reel({ col, reelIndex, stoppedReels, matchCount }) {
       const result = col.map((id) => SYMBOL_MAP[id] || SYMBOLS[0]);
       setCells(result);
       setLanding(true);
-      setTimeout(() => setLanding(false), 550);
+      landingTimerRef.current = setTimeout(() => setLanding(false), 550);
     }
   }, [isSpinning, col]);
 
   // Cleanup on unmount
-  useEffect(() => () => clearInterval(intervalRef.current), []);
+  useEffect(() => () => {
+    clearInterval(intervalRef.current);
+    clearTimeout(landingTimerRef.current);
+  }, []);
 
   return (
     <div className={`reel ${isWinCol ? 'reel--winning' : ''}`}>

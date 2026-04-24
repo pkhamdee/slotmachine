@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 
 const DURATION = 5 * 60; // 5 minutes in seconds
 
@@ -12,16 +12,18 @@ function formatTime(s) {
 
 export default function WinnerAnnouncement({ winner, currentPlayerName, onDismiss }) {
   const [countdown, setCountdown] = useState(DURATION);
+  const onDismissRef = useRef(onDismiss);
+  useEffect(() => { onDismissRef.current = onDismiss; }, [onDismiss]);
 
   useEffect(() => {
     setCountdown(DURATION); // reset whenever a new winner arrives
   }, [winner]);
 
   useEffect(() => {
-    if (countdown <= 0) { onDismiss(); return; }
+    if (countdown <= 0) { onDismissRef.current(); return; }
     const t = setTimeout(() => setCountdown((c) => c - 1), 1000);
     return () => clearTimeout(t);
-  }, [countdown, onDismiss]);
+  }, [countdown]);
 
   const isMe = winner?.winnerName === currentPlayerName;
 
