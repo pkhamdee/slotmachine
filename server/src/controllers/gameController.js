@@ -16,7 +16,8 @@ export async function registerPlayer(req, res) {
 
   const existing = await Player.findOne({ name: cleanName });
   if (existing) {
-    return res.status(409).json({ error: 'Name is already taken. Please choose a different name.' });
+    // Return the existing player so clearing storage / switching device never loses an account.
+    return res.json({ playerId: existing.playerId, name: existing.name, balance: existing.balance });
   }
 
   const player = await Player.create({ playerId: randomUUID(), name: cleanName, balance: 1000 });
