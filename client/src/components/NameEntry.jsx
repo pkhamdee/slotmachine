@@ -15,8 +15,8 @@ export default function NameEntry({ onJoin }) {
     const url = window.location.origin;
     QRCode.toCanvas(canvasRef.current, url, {
       width: 160,
-      margin: 2,
-      color: { dark: '#f5c518', light: '#0a0a1a' },
+      margin: 4,
+      color: { dark: '#000000', light: '#ffffff' },
     }).catch(console.error);
   }, []);
 
