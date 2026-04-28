@@ -46,7 +46,7 @@ export default function NameEntry({ onJoin }) {
   return (
     <div className="name-entry">
       <div className="name-entry__card">
-        <h1 className="name-entry__title">🎰 Nutanix Slot Machine</h1>
+        <h1 className="name-entry__title">🎰 NKP 888</h1>
         <p className="name-entry__subtitle">Enter your name to join the game</p>
         <form onSubmit={handleSubmit} className="name-entry__form">
           <input
