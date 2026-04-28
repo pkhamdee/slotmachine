@@ -12,7 +12,10 @@ A real-time multiplayer slot machine tournament app. Players compete in timed se
 | Styling | Custom CSS (BEM, no framework) |
 | Backend | Express + Socket.io |
 | Database | MongoDB 7 + Mongoose |
-| Deployment | Docker + Docker Compose |
+| Cache / Pub-Sub | Redis 7 (Socket.io multi-pod adapter via ioredis) |
+| Deployment (dev) | Docker + Docker Compose |
+| Deployment (prod) | AWS EKS (ap-southeast-7) · 4× m6i.xlarge · Cilium SNAT |
+| Load Balancer | AWS NLB (internet-facing, cross-zone, 3 AZs) |
 | Serving | Nginx (static files + reverse proxy) |
 | CI/CD | GitHub Actions |
 | Container Registry | Docker Hub (`pkhamdee/slotmachine`) |
@@ -27,16 +30,17 @@ A real-time multiplayer slot machine tournament app. Players compete in timed se
 
 ```
 Browser
-  └── Nginx :8080
+  └── Nginx :8080 (dev) / AWS NLB → Nginx :80 (prod)
         ├── /            → React SPA (static build)
         ├── /api/*       → Express server :3001
         └── /socket.io/* → Socket.io server :3001
 
-Express + Socket.io
-  └── MongoDB :27017
+Express + Socket.io (×6 pods in prod)
+  ├── MongoDB :27017   — player data, spins, sessions, hall of fame
+  └── Redis   :6379    — Socket.io pub/sub adapter (fan-out across pods)
 ```
 
-All real-time updates (scoreboard, session state, winner) are pushed over a single Socket.io connection per client. HTTP REST handles player actions (register, spin).
+All real-time updates (scoreboard every 1 s, session state, winner) are pushed over a single Socket.io connection per client. HTTP REST handles player actions (register, spin). In production, Socket.io uses a Redis adapter so events emitted on any of the 6 server pods reach all connected clients.
 
 ---
 
@@ -385,8 +389,23 @@ pkhamdee/slotmachine-deployment/
     production/     # kustomization.yaml patched with new image tags
 ```
 
-Apply the development overlay manually with:
+Apply an overlay manually with:
 
 ```bash
-kubectl apply -k overlays/development
+kubectl apply -k overlays/production
 ```
+
+### Production Kubernetes (AWS EKS ap-southeast-7)
+
+| Component | Replicas | CPU (req/limit) | Memory (req/limit) | Notes |
+|---|---|---|---|---|
+| client | 4 | 50m / 200m | 64Mi / 128Mi | One pod per node (topology spread) |
+| server | 6 | 200m / 1000m | 256Mi / 512Mi | Spread across nodes; Redis adapter for Socket.io |
+| mongodb | 1 (StatefulSet) | 500m / 2000m | 512Mi / 1Gi | 20Gi gp3 PVC |
+| redis | 1 | 100m / 500m | 128Mi / 256Mi | Socket.io pub/sub only |
+
+Infrastructure highlights:
+- **Nodes**: 4× m6i.xlarge (4 vCPU, 16 GB RAM, up to 58 pods each) via EKS managed node group with Launch Template (IMDS hop limit = 2 for IRSA, 50 GB gp3 root disk)
+- **CNI**: Cilium in **SNAT mode** — each node handles its own NodePort traffic end-to-end; no DSR asymmetric routing issues
+- **Load balancer**: AWS NLB, internet-facing, cross-zone enabled, 3 AZs (ap-southeast-7a/b/c)
+- **Pod scheduling**: `topologySpreadConstraints` with `whenUnsatisfiable: ScheduleAnyway` on client and server deployments ensures even distribution across nodes during rolling updates

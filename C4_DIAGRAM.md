@@ -37,19 +37,21 @@ C4Container
   Person(player, "Player")
   Person(admin, "Admin")
 
-  Container_Boundary(docker, "Docker Compose Stack") {
+  Container_Boundary(stack, "Slot Machine Stack") {
 
-    Container(nginx, "Nginx (Client)", "nginx:alpine", "Serves React SPA on port 8080. Reverse-proxies /api/ and /socket.io/ to the API server on the internal Docker network")
-    Container(server, "API Server", "Node.js 20 / Express + Socket.io", "REST API + real-time event bus. Enforces security headers (CSP, X-Frame-Options, X-Content-Type-Options, Permissions-Policy) and restricted CORS on every response")
-    ContainerDb(mongo, "MongoDB", "mongo:7", "Persists players, game sessions, spin rounds, player sessions, and hall of fame. Mounted as named volume mongo_data")
+    Container(nginx, "Nginx (Client)", "nginx:alpine", "Serves React SPA on port 8080 (dev) / 80 (prod). Reverse-proxies /api/ and /socket.io/ to the API server")
+    Container(server, "API Server", "Node.js 20 / Express + Socket.io", "REST API + real-time event bus. Uses Redis adapter so Socket.io events fan out across all server pods. Enforces security headers (CSP, X-Frame-Options, X-Content-Type-Options, Permissions-Policy) and restricted CORS on every response")
+    ContainerDb(mongo, "MongoDB", "mongo:7", "Persists players, game sessions, spin rounds, player sessions, and hall of fame")
+    ContainerDb(redis, "Redis", "redis:7-alpine", "Socket.io pub/sub adapter. Fans out real-time events (scoreboard every 1 s, session state, winner) across all server pod instances via three ioredis clients: pub, sub, and sm:sync signal subscriber")
   }
 
   System_Ext(dockerhub, "Docker Hub", "pkhamdee/slotmachine images")
 
-  Rel(player, nginx, "Opens game in browser", "HTTP :8080")
-  Rel(admin, nginx, "Accesses /admin panel", "HTTP :8080")
+  Rel(player, nginx, "Opens game in browser", "HTTP :8080 / :80")
+  Rel(admin, nginx, "Accesses /admin panel", "HTTP :8080 / :80")
   Rel(nginx, server, "Proxies REST calls + WebSocket upgrade", "HTTP :3001 (internal)")
   Rel(server, mongo, "Reads/writes game data", "Mongoose / MongoDB wire protocol (internal)")
+  Rel(server, redis, "Pub/sub for Socket.io multi-pod fan-out + sm:sync signals", "ioredis :6379 (internal)")
   Rel(dockerhub, nginx, "Image source: pkhamdee/slotmachine:client", "pulled on deploy")
   Rel(dockerhub, server, "Image source: pkhamdee/slotmachine:server", "pulled on deploy")
 ```
@@ -64,7 +66,8 @@ C4Component
 
   Container_Boundary(server, "API Server") {
 
-    Component(entrypoint, "server.js", "Express + http.Server", "App entrypoint. Disables X-Powered-By. Wires CORS (CORS_ORIGIN env), security headers middleware, Express, Socket.io, and Mongoose. Calls SessionManager.init(io) and SessionManager.start() before listening")
+    Component(entrypoint, "server.js", "Express + http.Server", "App entrypoint. Disables X-Powered-By. Wires CORS (CORS_ORIGIN env), security headers middleware, Express, Socket.io, and Mongoose. Creates three ioredis clients (pubClient, subClient, sigSubClient) and attaches Redis adapter to Socket.io. Calls SessionManager.init(io) and SessionManager.start() before listening")
+    Component(redisAdapter, "Redis Adapter", "@socket.io/redis-adapter + ioredis", "Three Redis connections: pubClient (commands), subClient (Socket.io adapter subscriber), sigSubClient (sm:sync signal channel for SessionManager cross-pod sync). Enables io.emit() to reach sockets on all server pods")
 
     Component(secHeaders, "Security Headers Middleware", "Express Middleware", "Applied before all routes. Sets: Content-Security-Policy (default-src/form-action/frame-ancestors/base-uri/navigate-to all 'none'), X-Frame-Options: DENY, X-Content-Type-Options: nosniff, Permissions-Policy. Addresses ZAP rules 10020 10021 10037 10038 10055 10063")
     Component(corsMiddleware, "CORS Middleware", "cors npm package", "Restricts origin to CORS_ORIGIN env var (default: http://localhost:5173). Not wildcard. Addresses ZAP rules 10098 40040")
@@ -97,6 +100,7 @@ C4Component
   Rel(entrypoint, corsMiddleware, "applies second")
   Rel(entrypoint, gameRoutes, "mounts at /api")
   Rel(entrypoint, sessionRoutes, "mounts at /api")
+  Rel(entrypoint, redisAdapter, "attaches to Socket.io server")
   Rel(entrypoint, sessionMgr, "init(io), start()")
 
   Rel(gameRoutes, gameCtrl, "delegates")
@@ -277,7 +281,7 @@ flowchart TD
 
 ```mermaid
 C4Deployment
-  title Deployment: Docker Compose (single host) + GitOps (Kubernetes)
+  title Deployment: Docker Compose (dev) + AWS EKS (production)
 
   Deployment_Node(ci, "GitHub Actions", "CI/CD runner") {
     Container(pipeline, "CI Pipeline", "6-job workflow", "CodeQL · Locust · ZAP · Trivy · Docker push · kustomize update")
@@ -286,34 +290,51 @@ C4Deployment
   System_Ext(dockerhub, "Docker Hub", "pkhamdee/slotmachine — client and server images tagged by Git SHA")
   System_Ext(deployrepo, "slotmachine-deployment repo", "Kustomize overlays for development and production")
 
-  Deployment_Node(host, "Linux Host", "Docker Engine") {
+  Deployment_Node(devhost, "Linux Host (dev)", "Docker Engine") {
     Deployment_Node(clientContainer, "slotmachine-client", "nginx:alpine") {
       Container(nginxInst, "Nginx", "Serves React SPA, reverse-proxies /api/ and /socket.io/ to server:3001")
     }
     Deployment_Node(serverContainer, "slotmachine-server", "node:20-alpine") {
-      Container(serverInst, "Express + Socket.io", "REST API, real-time event bus, security headers middleware")
+      Container(serverInst, "Express + Socket.io", "REST API, real-time event bus, Redis adapter")
     }
     Deployment_Node(mongoContainer, "slotmachine-mongo", "mongo:7") {
       ContainerDb(mongoInst, "MongoDB", "Named volume: mongo_data")
     }
+    Deployment_Node(redisContainer, "slotmachine-redis", "redis:7-alpine") {
+      ContainerDb(redisInst, "Redis", "Socket.io pub/sub adapter")
+    }
   }
 
-  Deployment_Node(k8s, "Kubernetes Cluster", "GitOps-managed") {
-    Container(k8sclient, "slotmachine-client pod", "nginx:alpine", "From DockerHub image")
-    Container(k8sserver, "slotmachine-server pod", "node:20-alpine", "From DockerHub image")
+  Deployment_Node(aws, "AWS ap-southeast-7", "Amazon EKS — production namespace") {
+    Deployment_Node(nlb, "AWS NLB", "internet-facing, cross-zone enabled") {
+      Container(nlbInst, "Network Load Balancer", "3 AZs (7a/7b/7c)", "TCP passthrough on port 80. Routes to client NodePort service across all nodes")
+    }
+    Deployment_Node(nodes, "4× m6i.xlarge nodes", "Amazon Linux 2023, Cilium CNI (SNAT mode), EKS 1.34") {
+      Container(clientPods, "client ×4", "nginx:alpine", "One pod per node (topology spread). 200m/128Mi limits. Serves React SPA + proxies /api/ and /socket.io/")
+      Container(serverPods, "server ×6", "node:20-alpine", "Spread across nodes. 1 CPU/512Mi limits. REST API + Socket.io via Redis adapter")
+      ContainerDb(mongoPod, "mongodb ×1", "mongo:7 StatefulSet", "20Gi gp3 PVC. 2 CPU/1Gi limits. Single-instance write path for all spins")
+      ContainerDb(redisPod, "redis ×1", "redis:7-alpine", "500m CPU/256Mi limits. Socket.io pub/sub fan-out across 6 server pods")
+    }
   }
 
-  Person(user, "User / Admin")
+  Person(user, "Player / Admin")
 
   Rel(pipeline, dockerhub, "pushes images on main merge")
   Rel(pipeline, deployrepo, "kustomize edit set image")
-  Rel(deployrepo, k8s, "GitOps controller syncs overlays")
-  Rel(dockerhub, k8sclient, "image pull")
-  Rel(dockerhub, k8sserver, "image pull")
+  Rel(deployrepo, aws, "kubectl apply -k overlays/production")
+  Rel(dockerhub, clientPods, "image pull")
+  Rel(dockerhub, serverPods, "image pull")
   Rel(dockerhub, nginxInst, "image pull on compose up")
   Rel(dockerhub, serverInst, "image pull on compose up")
 
-  Rel(user, nginxInst, "HTTP :8080")
+  Rel(user, nlbInst, "HTTP (browser / QR code)", "TCP :80")
+  Rel(nlbInst, clientPods, "TCP to NodePort")
+  Rel(clientPods, serverPods, "HTTP :3001 (ClusterIP service)")
+  Rel(serverPods, mongoPod, "MongoDB :27017")
+  Rel(serverPods, redisPod, "ioredis :6379")
+
+  Rel(user, nginxInst, "HTTP :8080 (dev only)")
   Rel(nginxInst, serverInst, "HTTP :3001 (internal)")
   Rel(serverInst, mongoInst, "MongoDB :27017 (internal)")
+  Rel(serverInst, redisInst, "ioredis :6379 (internal)")
 ```
